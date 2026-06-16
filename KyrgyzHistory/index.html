@@ -1,0 +1,101 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Источники истории Кыргызстана | ИИ-Поиск</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        .chat-container { height: calc(100vh - 220px); scroll-behavior: smooth; }
+        .loader { border-top-color: #1e3a8a; animation: spinner 0.8s linear infinite; }
+        @keyframes spinner { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+        .message-ai { white-space: pre-wrap; }
+    </style>
+</head>
+<body class="bg-slate-50 font-sans">
+    <div class="max-w-3xl mx-auto p-4">
+        <div class="bg-white p-5 rounded-xl shadow-lg border border-slate-200 mb-4 text-center">
+            <h1 class="text-2xl font-bold text-blue-900 mb-1">📚 Архив истории Кыргызстана</h1>
+            <p class="text-gray-600 text-xs">Поиск по 100+ верифицированным источникам с ИИ</p>
+        </div>
+
+        <div id="chatBox" class="chat-container bg-white rounded-xl shadow border border-slate-200 p-4 overflow-y-auto mb-4 space-y-4">
+            <div class="bg-blue-50 p-4 rounded-lg rounded-tl-none self-start text-sm text-blue-900 border border-blue-100">
+                Здравствуйте! Задайте вопрос. Я найду ответ в архивных документах, эпосах и научных трудах.
+            </div>
+        </div>
+
+        <div class="flex gap-2">
+            <input type="text" id="userInput" placeholder="Например: Восстание 1916 года..." 
+                   class="flex-1 p-3 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-900 transition" 
+                   onkeypress="if(event.key === 'Enter') sendMessage()">
+            <button onclick="sendMessage()" id="sendBtn" class="bg-blue-900 text-white px-6 py-3 rounded-lg hover:bg-blue-800 transition font-bold flex items-center gap-2">
+                <span>➤</span>
+            </button>
+        </div>
+    </div>
+
+    <script>
+        const BACKEND_URL = "http://127.0.0.1:8000";
+        let currentController = null; // ⚡ ОПТИМИЗАЦИЯ: Для отмены зависших запросов
+
+        async function sendMessage() {
+            const input = document.getElementById("userInput");
+            const msg = input.value.trim();
+            if (!msg) return;
+            
+            const chatBox = document.getElementById("chatBox");
+            const sendBtn = document.getElementById("sendBtn");
+            
+            // Отменяем предыдущий запрос, если он еще идет
+            if (currentController) currentController.abort();
+            currentController = new AbortController();
+
+            chatBox.innerHTML += `<div class="bg-blue-900 text-white p-3 rounded-lg rounded-tr-none self-end ml-auto max-w-[85%] shadow-sm">${msg}</div>`;
+            input.value = "";
+            chatBox.scrollTop = chatBox.scrollHeight;
+            sendBtn.disabled = true;
+            sendBtn.classList.add("opacity-50");
+
+            const loadId = "load-" + Date.now();
+            chatBox.innerHTML += `<div id="${loadId}" class="bg-slate-100 p-3 rounded-lg self-start flex items-center gap-2">
+                <div class="loader ease-linear rounded-full border-2 border-t-2 border-slate-300 h-5 w-5"></div>
+                <span class="text-xs text-gray-500">Поиск и генерация...</span>
+            </div>`;
+            chatBox.scrollTop = chatBox.scrollHeight;
+
+            const startTime = Date.now();
+
+            try {
+                const res = await fetch(`${BACKEND_URL}/api/chat`, {
+                    method: "POST",
+                    headers: {"Content-Type": "application/json"},
+                    body: JSON.stringify({message: msg}),
+                    signal: currentController.signal // ⚡ Привязываем сигнал отмены
+                });
+                
+                document.getElementById(loadId).remove();
+                const elapsed = ((Date.now() - startTime) / 1000).toFixed(2);
+                
+                if (res.ok) {
+                    const data = await res.json();
+                    const modelInfo = data.used_model ? `<div class="text-[10px] text-gray-400 mt-2 italic border-t border-gray-200 pt-1">🤖 ${data.used_model} • ⏱️ ${data.response_time || elapsed + 'с'}</div>` : '';
+                    chatBox.innerHTML += `<div class="bg-slate-100 border border-slate-200 p-4 rounded-lg rounded-tl-none self-start max-w-[90%] text-sm leading-relaxed text-gray-800 shadow-sm message-ai">${data.answer.replace(/\n/g, "<br>")}<br>${modelInfo}</div>`;
+                } else {
+                    const errData = await res.json();
+                    chatBox.innerHTML += `<div class="bg-red-50 text-red-700 p-3 rounded-lg self-start text-sm border border-red-200">Ошибка: ${errData.detail || 'Сервер недоступен'}</div>`;
+                }
+            } catch (e) {
+                if (e.name === 'AbortError') return; // Игнорируем ошибку отмены
+                document.getElementById(loadId).remove();
+                chatBox.innerHTML += `<div class="bg-red-50 text-red-700 p-3 rounded-lg self-start text-sm border border-red-200">Ошибка сети</div>`;
+            } finally {
+                sendBtn.disabled = false;
+                sendBtn.classList.remove("opacity-50");
+                chatBox.scrollTop = chatBox.scrollHeight;
+                currentController = null;
+            }
+        }
+    </script>
+</body>
+</html>
